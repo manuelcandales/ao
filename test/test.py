@@ -24,6 +24,7 @@ from torchao.quantization.quant_api import (
     change_linear_weights_to_int8_woqtensors,
     change_linear_weights_to_int4_woqtensors,
     _replace_with_custom_fn_if_matches_filter,
+    do_autoquant
 )
 from torchao.quantization.quant_primitives import (
     dequantize_per_channel,
@@ -53,6 +54,7 @@ from torchao.quantization.utils import (
     compute_error as SQNR,
     _fqn_to_op_to_shape_to_count,
     LoggingTensorMode,
+    benchmark
 )
 from torch.ao.quantization.quantize_fx import convert_to_reference_fx, prepare_fx
 import os
@@ -1195,6 +1197,32 @@ class SmoothquantIntegrationTest(unittest.TestCase):
         print("sqnr_pt_quant", sqnr_pt_quant)
         self.assertTrue(sqnr_sq >= 8.0)
 
+# TODO FINISH TEST CODE
+class TestAutoQuant(unittest.TestCase):
+    def test_auto_quant(self):
+        torch._inductor.config.epilogue_fusion = False
+        torch._inductor.config.use_mixed_mm = True
+        torch._inductor.config.force_fuse_int_mm_with_mul = True
+        torch._inductor.config.coordinate_descent_tuning = True
+        torch._dynamo.config.automatic_dynamic_shapes = False
+
+        for m,k,n in [
+            (1, 1024, 1024),
+            (64, 1024, 1024),
+            (4096, 1024, 1024),
+            (1, 1024, 4096),
+            (64, 1024, 4096),
+            (1, 4096, 1024),
+            (64, 4096, 1024),
+            (4096, 4096, 1024),
+        ]:
+            example_input = torch.randn(m, k, device="cuda", dtype=torch.bfloat16)
+            model = torch.nn.Sequential(
+                torch.nn.ReLU(),
+                torch.nn.Linear(k,n),
+                torch.nn.ReLU(),
+            ).to("cuda").to(torch.bfloat16)
+            do_autoquant(model, example_input)
 
 if __name__ == "__main__":
     unittest.main()
